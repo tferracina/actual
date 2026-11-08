@@ -213,19 +213,49 @@ export function TransactionList({
             onRefetch();
           } else {
             onChange(changes.newTransaction, changes.data);
-            void saveDiffAndApply(
+            await saveDiffAndApply(
               changes.diff,
               changes,
               onChange,
               isLearnCategoriesEnabled,
             );
           }
+          // Offer an explicit, deterministic bulk edit after the user's category is saved.
+          const categoryChanged = changes.diff.updated.some(
+            update => update.id === transaction.id && !!update.category,
+          );
+          if (categoryChanged && transaction.payee && transaction.amount < 0) {
+            try {
+              const preview = await send(
+                'transactions-merchant-category-preview',
+                {
+                  sourceId: transaction.id,
+                },
+              );
+              if (
+                preview?.candidates.length &&
+                transactionsLatest.current.find(t => t.id === transaction.id)
+                  ?.category === preview.categoryId
+              ) {
+                dispatch(
+                  pushModal({
+                    modal: {
+                      name: 'merchant-category',
+                      options: { preview, onApplied: onRefetch },
+                    },
+                  }),
+                );
+              }
+            } catch (error) {
+              console.error('Could not load other merchant purchases:', error);
+            }
+          }
         }
       };
 
       await saveTransaction();
     },
-    [isLearnCategoriesEnabled, onChange, onRefetch],
+    [dispatch, isLearnCategoriesEnabled, onChange, onRefetch],
   );
 
   const onAddSplit = useCallback(

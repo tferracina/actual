@@ -18,6 +18,7 @@ import type {
   UserEntity,
 } from '@actual-app/core/types/models';
 import type { CleanupTemplate } from '@actual-app/core/types/models/cleanup-templates';
+import type { MerchantCategoryPreview } from '@actual-app/core/types/models/merchant-category';
 import type { Template } from '@actual-app/core/types/models/templates';
 import { createSlice } from '@reduxjs/toolkit';
 import type { PayloadAction } from '@reduxjs/toolkit';
@@ -41,6 +42,10 @@ export type ConfirmTransactionEditReason =
   | 'deleteReconciled';
 
 export type Modal =
+  | {
+      name: 'merchant-category';
+      options: { preview: MerchantCategoryPreview; onApplied: () => void };
+    }
   | {
       name: 'import-transactions';
       options: {

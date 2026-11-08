@@ -64,6 +64,7 @@ import { ImportModal } from './modals/manager/ImportModal';
 import { ImportYNAB4Modal } from './modals/manager/ImportYNAB4Modal';
 import { ImportYNAB5Modal } from './modals/manager/ImportYNAB5Modal';
 import { ManageRulesModal } from './modals/ManageRulesModal';
+import { MerchantCategoryModal } from './modals/MerchantCategoryModal';
 import { MergeUnusedPayeesModal } from './modals/MergeUnusedPayeesModal';
 import { NewCategoryGroupModal } from './modals/NewCategoryGroupModal';
 import { NewCategoryModal } from './modals/NewCategoryModal';
@@ -164,6 +165,9 @@ export function Modals() {
 
         case 'convert-to-schedule':
           return <ConvertToScheduleModal key={key} {...modal.options} />;
+
+        case 'merchant-category':
+          return <MerchantCategoryModal key={key} {...modal.options} />;
 
         case 'confirm-delete':
           return <ConfirmDeleteModal key={key} {...modal.options} />;
