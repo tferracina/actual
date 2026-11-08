@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+export ACTUAL_HOSTNAME=127.0.0.1
+export ACTUAL_PORT="${ACTUAL_PORT:-5006}"
+export ACTUAL_DATA_DIR="$PWD/data/local"
+export ACTUAL_WEB_ROOT="$PWD/packages/desktop-client/build"
+export NODE_ENV=production
+umask 077
+mkdir -p "$ACTUAL_DATA_DIR"
+if [ ! -f packages/sync-server/build/app.js ] || [ ! -f packages/desktop-client/build/index.html ]; then
+  echo 'Build first: node .yarn/releases/yarn-4.17.1.cjs build:server'
+  exit 1
+fi
+exec node packages/sync-server/build/app.js
