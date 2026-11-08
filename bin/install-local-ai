@@ -1,0 +1,78 @@
+#!/bin/bash
+set -euo pipefail
+cd "$(dirname "$0")/.."
+umask 077
+integration="$PWD/data/local-ai/integration"
+revision=577078abb0eb9edc965162a235886a231c83e70e
+mkdir -p data/local-ai/logs
+if [ ! -d "$integration/.git" ]; then
+  git clone https://github.com/sakowicz/actual-ai.git "$integration"
+fi
+if [ "$(git -C "$integration" rev-parse HEAD)" != "$revision" ]; then
+  git -C "$integration" checkout "$revision"
+fi
+node --input-type=module <<'NODE'
+import fs from 'node:fs';
+const root = 'data/local-ai/integration/src/';
+const config = root + 'config.ts';
+let text = fs.readFileSync(config, 'utf8');
+text = text.replace("export const dataDir = '/tmp/actual-ai/';", "export const dataDir = process.env.LOCAL_AI_DATA_DIR ?? '/tmp/actual-ai/';");
+fs.writeFileSync(config, text);
+const filter = root + 'transaction/transaction-filterer.ts';
+text = fs.readFileSync(filter, 'utf8');
+if (!text.includes('LOCAL_AI_LIMIT')) {
+  text = text.replace('    return filteredTransactions;', `    // Avoid changing reconciled or split entries in this personal integration.
+    filteredTransactions = filteredTransactions.filter(t => !t.reconciled && !t.is_child);
+    const limit = Number(process.env.LOCAL_AI_LIMIT || 0);
+    console.log('Protected transactions excluded; remaining: ' + filteredTransactions.length);
+    if (limit > 0) {
+      console.log('Local preview limit: ' + limit);
+      return filteredTransactions.slice(0, limit);
+    }
+    return filteredTransactions;`);
+}
+fs.writeFileSync(filter, text);
+const llm = root + 'llm-service.ts';
+text = fs.readFileSync(llm, 'utf8');
+const marker = '  private parseResponse(text: string): UnifiedResponse {';
+const start = text.indexOf(marker);
+if (start < 0) throw new Error('Pinned integration parser changed');
+text = text.slice(0, start) + `  private parseResponse(text: string): UnifiedResponse {
+    // Local integration: strict JSON only, no UUID extraction from free text.
+    const parsed: unknown = JSON.parse(text);
+    if (!parsed || typeof parsed !== 'object' || !('type' in parsed) ||
+        parsed.type !== 'existing' || !('categoryId' in parsed) ||
+        typeof parsed.categoryId !== 'string') {
+      throw new Error('Expected an existing category or an abstention');
+    }
+    return { type: 'existing', categoryId: parsed.categoryId };
+  }
+}
+`;
+text = text.replace("import { parseLlmResponse } from './utils/json-utils';\n", '');
+fs.writeFileSync(llm, text);
+fs.copyFileSync('local-ai/local-only-fetch.ts', root + 'local-only-fetch.ts');
+const factory = root + 'llm-model-factory.ts';
+text = fs.readFileSync(factory, 'utf8');
+if (!text.includes('localOnlyFetch')) {
+  text = "import { localOnlyFetch } from './local-only-fetch';\n" + text;
+  text = text.replace('baseURL: this.ollamaBaseURL,', 'baseURL: this.ollamaBaseURL, fetch: localOnlyFetch,');
+}
+fs.writeFileSync(factory, text);
+fs.copyFileSync('local-ai/merchant-guard.ts', root + 'merchant-guard.ts');
+const processor = root + 'transaction/transaction-processor.ts';
+text = fs.readFileSync(processor, 'utf8');
+if (!text.includes('shouldReviewMerchant')) {
+  text = "import { shouldReviewMerchant } from '../merchant-guard';\n" + text;
+  text = text.replace('      const prompt = this.promptGenerator.generate(', `      const merchant = [transaction.imported_payee, payees.find(p => p.id === transaction.payee)?.name].filter(Boolean).join(' ');
+      if (shouldReviewMerchant(merchant)) {
+        await this.actualApiService.updateTransactionNotes(transaction.id, this.tagService.addNotGuessedTag(transaction.notes ?? ''));
+        console.log('Merchant guard: needs review');
+        return;
+      }
+      const prompt = this.promptGenerator.generate(`);
+}
+fs.writeFileSync(processor, text);
+NODE
+(cd "$integration" && npm ci --no-audit --no-fund && npm run build)
+echo 'Integration ready. See LOCAL_AI.md to install/download the local Ollama model.'
